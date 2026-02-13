@@ -48,10 +48,10 @@ DetectorConstruction::DetectorConstruction(TETModelImport* _tetData)
  composite_Rmin = 7.7*cm;
  composite_Rmax = composite_Rmin+composite_thickness;
  cout<<"!!!!!!!!!!!!!!!!!rmin rmax "<<G4BestUnit(composite_Rmin,"Length")<<" "<<G4BestUnit(composite_Rmax,"Length")<<endl;
-// polyprop_sizeZ = 0.5*cm; // for test
- polyprop_sizeZ = 10.*cm; // for test
-// polyprop_sizeZ1 = 10.*cm; //new for 10g/cm2 10.*cm
- polyprop_sizeZ1 = 20.*cm; //new for 1.5g/cm2
+ polyprop_sizeZ = 0.5*cm; // for test
+// polyprop_sizeZ = 10.*cm; // for test
+ polyprop_sizeZ1 = 10.*cm; //new for 10g/cm2 10.*cm
+// polyprop_sizeZ1 = 20.*cm; //new for 1.5g/cm2
  lif_R = 2.4*cm; // increase  size to improve stat
  lif_H = 48.0*mm; // increase  size to improve stat
  DefineMaterials();
@@ -111,10 +111,10 @@ void DetectorConstruction::SetupWorldGeometry()
  fWorldPhysical = new G4PVPlacement(nullptr,G4ThreeVector(), logicWorld,"worldPhysical", nullptr, false,0,false);
 
 //-------------------------- ISS zvezda
- double Phi1 = CLHEP::pi*1./2.;
- double Phi2 = CLHEP::pi*2.8/2.;
-// double Phi1 = 0.;
-// double Phi2 = CLHEP::twopi;
+// double Phi1 = CLHEP::pi*1./2.;
+// double Phi2 = CLHEP::pi*2.8/2.;
+ double Phi1 = 0.;
+ double Phi2 = CLHEP::twopi;
 /*********************phantom drawing**********************************\
  auto* containerSolid = new G4Box("phantomBox", fPhantomSize.x()/2 + 10.*cm,
 					           fPhantomSize.y()/2 + 10.*cm,
