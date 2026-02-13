@@ -1,0 +1,716 @@
+
+//
+// ********************************************************************
+// * License and Disclaimer                                           *
+// *                                                                  *
+// * The  Geant4 software  is  copyright of the Copyright Holders  of *
+// * the Geant4 Collaboration.  It is provided  under  the terms  and *
+// * conditions of the Geant4 Software License,  included in the file *
+// * LICENSE and available at  http://cern.ch/geant4/license .  These *
+// * include a list of copyright holders.                             *
+// *                                                                  *
+// * Neither the authors of this software system, nor their employing *
+// * institutes,nor the agencies providing financial support for this *
+// * work  make  any representation or  warranty, express or implied, *
+// * regarding  this  software system or assume any liability for its *
+// * use.  Please see the license in the file  LICENSE  and URL above *
+// * for the full disclaimer and the limitation of liability.         *
+// *                                                                  *
+// * This  code  implementation is the result of  the  scientific and *
+// * technical work of the GEANT4 collaboration.                      *
+// * By using,  copying,  modifying or  distributing the software (or *
+// * any work based  on the software)  you  agree  to acknowledge its *
+// * use  in  resulting  scientific  publications,  and indicate your *
+// * acceptance of all terms of the Geant4 Software license.          *
+// ********************************************************************
+//
+// 
+// Author: Haegin Han
+// Reference: ICRP Publication 145. Ann. ICRP 49(3), 2020.
+// Geant4 Contributors: J. Allison and S. Guatelli
+//
+
+#include "DetectorConstruction.hh"
+#include "G4Material.hh"
+#include "G4VisAttributes.hh"
+#include "Materials.hh"
+#include "G4UnitsTable.hh"
+using namespace std;
+
+DetectorConstruction::DetectorConstruction(TETModelImport* _tetData)
+:fWorldPhysical(nullptr), fContainer_logic(nullptr), fTetData(_tetData), fTetLogic(nullptr)
+{
+//  alum_sizeZ = 0.4*cm;
+ alum_sizeZ = 10.0*cm;
+ steel_sizeZ = 15.0*cm;
+ composite_sizeZ = 16.5*cm;
+ composite_thickness = 1.*cm;
+ composite_Rmin = 7.7*cm;
+ composite_Rmax = composite_Rmin+composite_thickness;
+ cout<<"!!!!!!!!!!!!!!!!!rmin rmax "<<G4BestUnit(composite_Rmin,"Length")<<" "<<G4BestUnit(composite_Rmax,"Length")<<endl;
+//  polyprop_sizeZ = 0.5*cm; // for test
+ polyprop_sizeZ = 5.*mm; // for test
+//  polyprop_sizeZ1 = 10.*cm; //new for 10g/cm2 10.*cm
+ polyprop_sizeZ1 = 20.*cm; //new for 1.5g/cm2
+ lif_R = 2.4*cm; // increase  size to improve stat
+ lif_H = 48.0*mm; // increase  size to improve stat
+ DefineMaterials();
+ // initialisation of the variables for phantom information
+ fPhantomSize     = fTetData -> GetPhantomSize();
+ fPhantomBoxMin   = fTetData -> GetPhantomBoxMin();
+ fPhantomBoxMax   = fTetData -> GetPhantomBoxMax();
+ fNOfTetrahedrons = fTetData -> GetNumTetrahedron();
+}
+
+DetectorConstruction::~DetectorConstruction()
+{
+  delete fTetData;
+}
+
+G4VPhysicalVolume* DetectorConstruction::Construct()
+{
+ SetupWorldGeometry();
+// ConstructPhantom();
+// PrintPhantomInformation();
+ return fWorldPhysical;
+}
+
+void DetectorConstruction::SetupWorldGeometry()
+{
+ G4NistManager* nist = G4NistManager::Instance();
+ world_mat = nist->FindOrBuildMaterial("G4_Galactic");
+ alum_mat = nist->FindOrBuildMaterial("G4_Al");
+ polyprop_mat = nist->FindOrBuildMaterial("G4_POLYPROPYLENE");
+ iss_mat = nist->FindOrBuildMaterial("G4_AIR");
+
+ G4double world_R = (234./2.*cm+350.*cm+100.*cm+225.*cm+20.*cm)/1.0;
+ G4Sphere* worldSolid =
+   new G4Sphere("World",                       //its name
+       0, world_R, 0, CLHEP::twopi, 0, CLHEP::twopi);     //its size
+ // Define the world box (size: 10*10*10 m3)
+ //
+// G4double worldXYZ = 10. * m;
+// G4Material* vacuum = G4NistManager::Instance()->FindOrBuildMaterial("G4_Galactic");
+
+// G4VSolid* worldSolid = new G4Box("worldSolid", worldXYZ/2, worldXYZ/2, worldXYZ/2);
+
+ auto* logicWorld = new G4LogicalVolume(worldSolid,world_mat,"worldLogical");
+
+ fWorldPhysical = new G4PVPlacement(nullptr,G4ThreeVector(), logicWorld,"worldPhysical", nullptr, false,0,false);
+
+//-------------------------- ISS zvezda
+ G4Box* solidTest =
+    new G4Box("Test",                       //its name
+       1.5*m, 1.5*m, 100.*cm);     //its size
+ G4LogicalVolume* logic_test = new G4LogicalVolume(solidTest,        //its solid
+//                                       lif_mat,   //its material
+//                                       steel_mat,   //its material
+                                       polyprop_mat,   //its material
+//                                       iss_mat,   //its material
+                                       "Test");       //its name
+ G4VPhysicalVolume* physic_test = new G4PVPlacement(0,                           //rotation
+                        G4ThreeVector(0,0,0),
+                        logic_test,                            //its logical volume
+                        "Test",                                       //its name
+                        logicWorld,                           //its mother  volume
+                        false,                                  //no boolean operation
+                        0);                                     //copy number
+  physic_test->CheckOverlaps();
+// end man box
+
+
+ return;
+ double Phi1 = CLHEP::pi*1./2.;
+// double Phi2 = CLHEP::pi*2.8/2.;
+ double Phi2 = CLHEP::pi;
+// double Phi1 = 0.;
+// double Phi2 = CLHEP::twopi;
+ double weight_total = 0;
+ cout<<"!!!!!!!!! aluminium wall "<<alum_sizeZ<<endl;
+ cout<<"!!!!!!!!! steel wall "<<steel_sizeZ<<endl;
+ cout<<"!!!!!!!!! polyprop wall "<<polyprop_sizeZ<<endl;
+ cout<<"!!!!!!!!! polyprop wall "<<polyprop_sizeZ1<<endl;
+ double alum_R11max = 145.0*cm;
+ double alum_R11min = alum_R11max - alum_sizeZ;
+ double alum_R12max = 211.0*cm;
+ double alum_R12min = alum_R12max - alum_sizeZ;
+ double alum_L1 = 234.0*cm;
+ G4Cons* solidAlum1 =
+    new G4Cons("Aluminium1",                       //its name
+       alum_R12min, alum_R12max, alum_R11min, alum_R11max, alum_L1/2.0, Phi1, Phi2);     //its size
+ G4LogicalVolume *logicAlum1 = new G4LogicalVolume(solidAlum1,        //its solid
+                                       alum_mat,   //its material
+                                       "Aluminium1");       //its name
+ G4VPhysicalVolume *physicAlum1 = new G4PVPlacement(0,                           //rotation
+                        G4ThreeVector(0,0,0),
+                        logicAlum1,                            //its logical volume
+                        "Aluminium1",                                       //its name
+                        logicWorld,                           //its mother  volume
+                        false,                                  //no boolean operation
+                        0);                                     //copy number
+ physicAlum1->CheckOverlaps();
+ weight_total += logicAlum1->GetMass();
+ cout<<"!!!!!!!!!!!!!!weight Aluminim1 total "<<logicAlum1->GetMass()/kg<<" "<<weight_total/kg<<endl;
+ double polyprop_R11max = alum_R11min;
+ double polyprop_R11min = polyprop_R11max - polyprop_sizeZ1;
+ double polyprop_R12max = alum_R12min;
+ double polyprop_R12min = polyprop_R12max - polyprop_sizeZ1;
+ G4Cons* solidPolyprop1 =
+    new G4Cons("Polyprop1",                       //its name
+       polyprop_R12min, polyprop_R12max, polyprop_R11min, polyprop_R11max, alum_L1/2.0, Phi1, Phi2);     //its size
+ G4LogicalVolume *logicPolyprop1 = new G4LogicalVolume(solidPolyprop1,        //its solid
+                                       polyprop_mat,   //its material
+                                       "Polyprop1");       //its name
+ G4VPhysicalVolume *physicPolyprop1 = new G4PVPlacement(0,                           //rotation
+                        G4ThreeVector(0,0,0),
+                        logicPolyprop1,                            //its logical volume
+                        "Polyprop1",                                       //its name
+                        logicWorld,                           //its mother  volume
+                        false,                                  //no boolean operation
+                        0);                                     //copy number
+ physicPolyprop1->CheckOverlaps();
+ weight_total += logicPolyprop1->GetMass();
+ cout<<"!!!!!!!!!!!!!!!weight Polyprop1 total "<<logicPolyprop1->GetMass()/kg<<" "<<weight_total/kg<<endl;
+ G4Cons* solidAir1 =
+    new G4Cons("Air1",                       //its name
+       0, polyprop_R12min, 0, polyprop_R11min, alum_L1/2.0, Phi1, Phi2);     //its size
+ G4LogicalVolume *logicAir1 = new G4LogicalVolume(solidAir1,        //its solid
+                                       iss_mat,   //its material
+                                       "Air1");       //its name
+ G4VPhysicalVolume *physicAir1 = new G4PVPlacement(0,                           //rotation
+                        G4ThreeVector(0,0,0),
+                        logicAir1,                            //its logical volume
+                        "Air1",                                       //its name
+                        logicWorld,                           //its mother  volume
+                        false,                                  //no boolean operation
+                        0);                                     //copy number
+ physicAir1->CheckOverlaps();
+ weight_total += logicAir1->GetMass();
+ cout<<"!!!!!!!!!!!!!!!weight Air1 total "<<logicAir1->GetMass()/kg<<" "<<weight_total/kg<<endl;
+ double alum_R2max = 145.0*cm;
+ double alum_R2min = alum_R2max - alum_sizeZ;
+ double alum_L2 = 350.0*cm;
+ G4Tubs* solidAlum2 =
+    new G4Tubs("Aluminium2",                       //its name
+       alum_R2min, alum_R2max, alum_L2/2.0, Phi1, Phi2);     //its size
+ G4LogicalVolume *logicAlum2 = new G4LogicalVolume(solidAlum2,        //its solid
+                                       alum_mat,   //its material
+                                       "Aluminium2");       //its name
+ G4VPhysicalVolume *physicAlum2 = new G4PVPlacement(0,                           //rotation
+                        G4ThreeVector(0,0,(alum_L1+alum_L2)/2.),
+                        logicAlum2,                            //its logical volume
+                        "Aluminium2",                                       //its name
+                        logicWorld,                           //its mother  volume
+                        false,                                  //no boolean operation
+                        0);                                     //copy number
+ physicAlum2->CheckOverlaps();
+ weight_total += logicAlum2->GetMass();
+ cout<<"!!!!!!!!!!! weight Aluminium2 total "<<logicAlum2->GetMass()/kg<<" "<<weight_total/kg<<endl;
+ double polyprop_R2max = alum_R2min;
+ double polyprop_R2min = polyprop_R2max - polyprop_sizeZ1;
+ double polyprop_L2 = alum_L2;
+ G4Tubs* solidPolyprop2 =
+    new G4Tubs("Polyprop2",                       //its name
+       polyprop_R2min, polyprop_R2max, polyprop_L2/2.0, Phi1, Phi2);     //its size
+ G4LogicalVolume *logicPolyprop2 = new G4LogicalVolume(solidPolyprop2,        //its solid
+                                       polyprop_mat,   //its material
+                                       "Polyprop2");       //its name
+ G4VPhysicalVolume *physicPolyprop2 = new G4PVPlacement(0,                           //rotation
+                        G4ThreeVector(0,0,(alum_L1+alum_L2)/2.),
+                        logicPolyprop2,                            //its logical volume
+                        "Polyprop2",                                       //its name
+                        logicWorld,                           //its mother  volume
+                        false,                                  //no boolean operation
+                        0);                                     //copy number
+ physicPolyprop2->CheckOverlaps();
+ weight_total += logicPolyprop2->GetMass();
+ cout<<"!!!!!!!!!!!!!! weight Polyprop2 total "<<logicPolyprop2->GetMass()/kg<<" "<<weight_total/kg<<endl;
+ G4Tubs* solidAir2 =
+    new G4Tubs("Air2",                       //its name
+       0, polyprop_R2min, polyprop_L2/2.0, Phi1, Phi2);     //its size
+ G4LogicalVolume *logicAir2 = new G4LogicalVolume(solidAir2,        //its solid
+                                       iss_mat,   //its material
+                                       "Air2");       //its name
+ G4VPhysicalVolume *physicAir2 = new G4PVPlacement(0,                           //rotation
+                        G4ThreeVector(0,0,(alum_L1+alum_L2)/2.),
+                        logicAir2,                            //its logical volume
+                        "Air2",                                       //its name
+                        logicWorld,                           //its mother  volume
+                        false,                                  //no boolean operation
+                        0);                                     //copy number
+ physicAir2->CheckOverlaps();
+ weight_total += logicAir2->GetMass();
+ cout<<"!!!!!!!!!!!!!!!!!! weight Air2 total "<<logicAir2->GetMass()/kg<<" "<<weight_total/kg<<endl;
+ double alum_R3max = 211.0*cm;
+ double alum_R3min = alum_R3max - alum_sizeZ;
+ double alum_L3 = 290.0*cm;
+ G4Tubs* solidAlum3 =
+    new G4Tubs("Aluminium3",                       //its name
+       alum_R3min, alum_R3max, alum_L3/2.0, Phi1, Phi2);     //its size
+ G4LogicalVolume *logicAlum3 = new G4LogicalVolume(solidAlum3,        //its solid
+                                       alum_mat,   //its material
+                                       "Aluminium3");       //its name
+ G4VPhysicalVolume *physicAlum3 = new G4PVPlacement(0,                           //rotation
+                        G4ThreeVector(0,0,-(alum_L1+alum_L3)/2.),
+                        logicAlum3,                            //its logical volume
+                        "Aluminium3",                                       //its name
+                        logicWorld,                           //its mother  volume
+                        false,                                  //no boolean operation
+                        0);                                     //copy number
+ physicAlum3->CheckOverlaps();
+ cout<<"!!!!!!!!!!! alum_L3 "<<alum_L3<<endl;
+ weight_total += logicAlum3->GetMass();
+
+ G4Tubs* solidAir7 =
+    new G4Tubs("Air7",                       //its name
+       0, alum_R3min, alum_L3/2.0, 0, CLHEP::twopi);     //its size
+ G4LogicalVolume *logicAir7 = new G4LogicalVolume(solidAir7, //its solid
+                                       iss_mat,   //its material
+                                       "Air7");       //its name
+ G4VPhysicalVolume *physicAir7 = new G4PVPlacement(0,                           //rotation
+                        G4ThreeVector(0,0,-(alum_L1+alum_L3)/2. ),
+                        logicAir7,                            //its logical volume
+                        "Air7",                                       //its name
+                        logicWorld,                           //its mother  volume
+                        false,                                  //no boolean operation
+                        0);                                     //copy number
+ physicAir7->CheckOverlaps();
+
+ double polyprop_R7max = alum_R3min;
+ double polyprop_R7min = polyprop_R7max - polyprop_sizeZ1;
+ G4Tubs* solidPolyprop71 =
+    new G4Tubs("Polyprop71",                       //its name
+       polyprop_R7min, polyprop_R7max, alum_L3/2.0, Phi1, Phi2);     //its size
+// G4LogicalVolume *logicPolyprop7 = new G4LogicalVolume(solidPolyprop7, //its solid
+//                                       polyprop_mat,   //its material
+//                                       "Polyprop7");       //its name
+ double sleep_l = 2.0*m;
+ double thet = asin(0.5*m/polyprop_R7min);
+ cout<<"!!!!! thet "<<thet*180./CLHEP::pi<<" "<<CLHEP::pi<<" "<<thet<<endl;
+ G4Tubs* solidPolyprop72 =
+    new G4Tubs("Polyprop72",                       //its name
+       polyprop_R7min, polyprop_R7max-polyprop_sizeZ, (sleep_l)/2.0, CLHEP::pi-thet, thet*2.);     //its size
+// G4SubtractionSolid* solidPolyprop7  = new G4SubtractionSolid("Polyprop7", solidPolyprop71, solidPolyprop72, 0,
+//                    G4ThreeVector(0.,0.,0.));
+ G4SubtractionSolid* solidPolyprop7  = new G4SubtractionSolid("Polyprop7", solidPolyprop71, solidPolyprop72 );
+
+ G4LogicalVolume *logicPolyprop7 = new G4LogicalVolume(solidPolyprop7, //its solid
+                                       polyprop_mat,   //its material
+                                       "Polyprop7");       //its name
+ G4VPhysicalVolume *physicPolyprop7 = new G4PVPlacement(0,                           //rotation
+                        G4ThreeVector(0,0,0 ),
+                        logicPolyprop7,                            //its logical volume
+                        "Polyprop7",                                       //its name
+                        logicAir7,                           //its mother  volume
+                        false,                                  //no boolean operation
+                        0);                                     //copy number
+ physicPolyprop7->CheckOverlaps();
+
+ weight_total += logicPolyprop7->GetMass();
+ cout<<"!!!!!!!!!!!!weight Polyprop7 total "<<logicPolyprop7->GetMass()/kg<<" "<<weight_total/kg<<endl;
+
+
+// double sleep_Rmax = alum_R3min-5.*mm;
+// double sleep_Rmin = polyprop_R7min;;
+// double thet = asin(0.5*m/sleep_Rmin);
+// G4Tubs* solidSleep =
+//    new G4Tubs("Sleep",                       //its name
+//       sleep_Rmin, sleep_Rmax, 2.0*m/2.0, CLHEP::pi-thet, thet);     //its size
+// G4LogicalVolume *logicSleep = new G4LogicalVolume(solidSleep, //its solid
+//                                       iss_mat,   //its material
+//                                       "Sleep");       //its name
+// G4VPhysicalVolume *physicSleep = new G4PVPlacement(0,                           //rotation
+//                        G4ThreeVector(0,0,0),
+//                        logicSleep,                            //its logical volume
+//                        "Sleep",                                       //its name
+//                        logicPolyprop7,                           //its mother  volume
+//                        false,                                  //no boolean operation
+//                        0);                                     //copy number
+// physicSleep->CheckOverlaps();
+
+
+
+ weight_total += logicAir7->GetMass();
+ cout<<"!!!!!!!! weight Air7 total "<<logicAir7->GetMass()/kg<<" "<<weight_total/kg<<endl;
+ double steel_R3max = 211.0*cm;
+ double steel_R3min = steel_R3max - steel_sizeZ;
+ double steel_L3 = 250.0*cm;
+ G4Tubs* solidSteel3_1 =
+    new G4Tubs("Steel3_1",                       //its name
+       steel_R3min, steel_R3max, steel_L3/2.0, Phi1, Phi2);     //its size
+ double steel_RCmax = 975.5*cm/2.;
+ double steel_RCmin = steel_RCmax - steel_sizeZ;
+ double my_phi = asin(steel_R3max/steel_RCmax);
+ cout<<"!!!!!!!!!!! steel_RCmax my_phi "<<steel_RCmax<<" "<<my_phi<<endl;
+ G4Sphere* solidSteel34_1 =
+    new G4Sphere("Aluminium34_1",                       //its name
+       steel_RCmin, steel_RCmax, Phi1, Phi2, CLHEP::pi-my_phi, my_phi);     //its size
+ G4SubtractionSolid* solidSteel3  = new G4SubtractionSolid("Steel3", solidSteel3_1, solidSteel34_1, 0,
+                    G4ThreeVector(0,0.,-steel_L3/2.+steel_RCmax*cos(my_phi)));
+
+
+ G4LogicalVolume *logicSteel3 = new G4LogicalVolume(solidSteel3,        //its solid
+                                       steel_mat,   //its material
+                                       "Steel3");       //its name
+ G4VPhysicalVolume *physicSteel3 = new G4PVPlacement(0,                           //rotation
+                        G4ThreeVector(0,0,-(2.*alum_L3+alum_L1+steel_L3)/2.),
+                        logicSteel3,                            //its logical volume
+                        "Steel3",                                       //its name
+                        logicWorld,                           //its mother  volume
+                        false,                                  //no boolean operation
+                        0);                                     //copy number
+ physicSteel3->CheckOverlaps();
+ weight_total += logicSteel3->GetMass();
+ cout<<"!!!!!!!!!!!!!!!weight Steel3 total "<<logicSteel3->GetMass()/kg<<" "<<weight_total/kg<<endl;
+ double polyprop_RCmax = 975.5*cm/2.- steel_sizeZ;
+ double polyprop_RCmin = polyprop_RCmax - polyprop_sizeZ1;
+ double polyprop_R3max = steel_R3min;
+ double polyprop_R3min = polyprop_R3max - polyprop_sizeZ1;
+ double polyprop_L3 = steel_L3 - steel_sizeZ/cos(my_phi) + steel_sizeZ*sin(my_phi);
+ double  my_phi_prop = asin(polyprop_R3max/polyprop_RCmax);
+//  double polyprop_L3 = alum_L3 - steel_sizeZ;
+ cout<<"!!!!!!!!!!! steel_RCmax prop_RCmax "<<steel_RCmax<<" "<<polyprop_RCmax<<endl;
+ cout<<"!!!!!!!!!!! my prop "<<polyprop_RCmax*sin(my_phi_prop)<<" "<<polyprop_R3max<<endl;
+ G4Tubs* solidPolyprop3_1 =
+    new G4Tubs("Polyprop3_1",                       //its name
+       polyprop_R3min, polyprop_R3max, polyprop_L3/2.0, Phi1, Phi2);     //its size
+ cout<<"!!!!!!!!!!! polyprop_RCmax my_phi "<<polyprop_RCmax<<" "<<my_phi<<endl;
+ G4Sphere* solidPolyprop34_1 =
+    new G4Sphere("Polyprop34_1",                       //its name
+//       polyprop_RCmin, polyprop_RCmax, CLHEP::pi*1./2., CLHEP::pi*2.8/2., CLHEP::pi-my_phi_prop, my_phi_prop);     //its size
+       polyprop_RCmin, polyprop_RCmax, Phi1, Phi2, CLHEP::pi-my_phi_prop, my_phi_prop);     //its size
+ G4SubtractionSolid* solidPolyprop3  = new G4SubtractionSolid("Polyprop3", solidPolyprop3_1, solidPolyprop34_1, 0,
+                    G4ThreeVector(0,0.,-polyprop_L3/2.+polyprop_RCmax*cos(my_phi_prop)));
+ G4LogicalVolume *logicPolyprop3 = new G4LogicalVolume(solidPolyprop3,        //its solid
+                                       polyprop_mat,   //its material
+                                       "Polyprop3");       //its name
+ G4VPhysicalVolume *physicPolyprop3 = new G4PVPlacement(0,                           //rotation
+                        G4ThreeVector(0,0,-(2.*alum_L3+alum_L1+polyprop_L3)/2.),
+                        logicPolyprop3,                            //its logical volume
+                        "Polyprop3",                                       //its name
+                        logicWorld,                           //its mother  volume
+                        false,                                  //no boolean operation
+                        0);                                     //copy number
+ physicPolyprop3->CheckOverlaps();
+ weight_total += logicPolyprop3->GetMass();
+ cout<<"!!!!!!!!!!!!weight Polyprop3 total "<<logicPolyprop3->GetMass()/kg<<" "<<weight_total/kg<<endl;
+ G4Tubs* solidAir3 =
+    new G4Tubs("Air3",                       //its name
+       0, polyprop_R3min, (polyprop_L3-polyprop_sizeZ1)/2.0, Phi1, Phi2);     //its size
+ G4LogicalVolume *logicAir3 = new G4LogicalVolume(solidAir3,        //its solid
+                                       iss_mat,   //its material
+                                       "Air3");       //its name
+ G4VPhysicalVolume *physicAir3 = new G4PVPlacement(0,                           //rotation
+                        G4ThreeVector(0,0,-(alum_L3+alum_L1/2.+polyprop_L3/2.-polyprop_sizeZ1/2.)),
+                        logicAir3,                            //its logical volume
+                        "Air3",                                       //its name
+                        logicWorld,                           //its mother  volume
+                        false,                                  //no boolean operation
+                        0);                                     //copy number
+ physicAir3->CheckOverlaps();
+ weight_total += logicAir3->GetMass();
+ cout<<"!!!!!!!!!!!! weight Air3 total "<<logicAir3->GetMass()/kg<<" "<<weight_total/kg<<endl;
+ my_phi = asin(steel_R3max/steel_RCmax);
+ cout<<"!!!!!!!!!!! steel_RCmax my_phi "<<steel_RCmax<<" "<<my_phi<<endl;
+ G4Sphere* solidSteel34 =
+   new G4Sphere("Aluminium34",                       //its name
+       steel_RCmin, steel_RCmax, Phi1, Phi2, CLHEP::pi-my_phi, my_phi);     //its size
+ G4LogicalVolume *logicSteel34 = new G4LogicalVolume(solidSteel34,        //its solid
+                                       steel_mat,   //its material
+                                       "Steel34");       //its name
+ G4VPhysicalVolume *physicSteel34 = new G4PVPlacement(0,                           //rotation
+                        G4ThreeVector(0,0,(-alum_L1/2.-alum_L3-steel_L3+(steel_RCmax)*cos(my_phi)) ),
+                        logicSteel34,                            //its logical volume
+                        "Steel34",                                       //its name
+                        logicWorld,                           //its mother  volume
+                        false,                                  //no boolean operation
+                        0);                                     //copy number
+ physicSteel34->CheckOverlaps();
+ weight_total += logicSteel34->GetMass();
+ cout<<"!!!!!!!!!!!!!weight Steel34 total "<<logicSteel34->GetMass()/kg<<" "<<weight_total/kg<<endl;
+ my_phi = asin(polyprop_R3max/polyprop_RCmax);
+ G4Sphere* solidPolyprop34 =
+    new G4Sphere("Polyprop34",                       //its name
+       polyprop_RCmin, polyprop_RCmax, Phi1, Phi2, CLHEP::pi-my_phi, my_phi);     //its size
+ G4LogicalVolume *logicPolyprop34 = new G4LogicalVolume(solidPolyprop34,        //its solid
+                                       polyprop_mat,   //its material
+                                       "Polyprop34");       //its name
+ G4VPhysicalVolume *physicPolyprop34 = new G4PVPlacement(0,                           //rotation
+                        G4ThreeVector(0,0,(-alum_L1/2.-alum_L3-polyprop_L3+(polyprop_RCmax)*cos(my_phi)) ),
+                        logicPolyprop34,                            //its logical volume
+                        "Polyprop34",                                       //its name
+                        logicWorld,                           //its mother  volume
+                        false,                                  //no boolean operation
+                        0);                                     //copy number
+ physicPolyprop34->CheckOverlaps();
+ weight_total += logicPolyprop34->GetMass();
+ cout<<"!!!!!!!!!!!!!!!weight Polyprop34 total "<<logicPolyprop34->GetMass()/kg<<" "<<weight_total/kg<<endl;
+ double steel_R41max = alum_R2max;
+ double steel_R41min = steel_R41max - alum_sizeZ;
+ double steel_R42max = 225.0*cm/2.*sin(CLHEP::pi/4.);
+ double steel_R42min = steel_R42max - steel_sizeZ*cos(CLHEP::pi/4.);
+ double steel_L4 = 100.*cm;
+ G4Cons* solidSteel4 =
+    new G4Cons("Steel4",                       //its name
+       steel_R41min, steel_R41max, steel_R42min, steel_R42max, steel_L4/2.0, Phi1, Phi2);     //its size
+ G4LogicalVolume *logicSteel4 = new G4LogicalVolume(solidSteel4,        //its solid
+                                       alum_mat,   //its material
+                                       "Steel4");       //its name
+ G4VPhysicalVolume *physicSteel4 = new G4PVPlacement(0,                           //rotation
+                        G4ThreeVector(0,0,(alum_L1/2.+alum_L2+steel_L4/2.0)),
+                        logicSteel4,                            //its logical volume
+                        "Steel4",                                       //its name
+                        logicWorld,                           //its mother  volume
+                        false,                                  //no boolean operation
+                        0);                                     //copy number
+ physicSteel4->CheckOverlaps();
+ weight_total += logicSteel4->GetMass();
+ cout<<"!!!!!!!!!!!!!!!!!weight Steel4 total "<<logicSteel4->GetMass()/kg<<" "<<weight_total/kg<<endl;
+ double steel_R411max = steel_R42max;
+ double steel_R411min = steel_R42max - steel_sizeZ*cos(CLHEP::pi/4.);
+ double steel_R412max = (225.0*cm/2. - steel_sizeZ)*cos(CLHEP::pi/4.);
+ double steel_L41 = steel_sizeZ*cos(CLHEP::pi/4.);
+ G4Cons* solidSteel41 =
+    new G4Cons("Steel41",                       //its name
+       steel_R411min, steel_R411max, steel_R412max, steel_R412max, steel_L41/2.0, Phi1, Phi2);     //its size
+ G4LogicalVolume *logicSteel41 = new G4LogicalVolume(solidSteel41,        //its solid
+                                       steel_mat,   //its material
+                                       "Steel41");       //its name
+ G4VPhysicalVolume *physicSteel41 = new G4PVPlacement(0,                           //rotation
+                        G4ThreeVector(0,0,(alum_L1/2.+alum_L2+steel_L4+steel_L41/2.0)),
+                        logicSteel41,                            //its logical volume
+                        "Steel41",                                       //its name
+                        logicWorld,                           //its mother  volume
+                        false,                                  //no boolean operation
+                        0);                                     //copy number
+ physicSteel41->CheckOverlaps();
+ weight_total += logicSteel41->GetMass();
+ cout<<"!!!!!!!!!!!!!!!weight Steel41 total "<<logicSteel41->GetMass()/kg<<" "<<weight_total/kg<<endl;
+ double polyprop_R41max = steel_R41min;
+ double polyprop_R41min = polyprop_R41max - polyprop_sizeZ1;
+ double polyprop_R42max = steel_R42min;
+ double polyprop_R42min = polyprop_R42max - polyprop_sizeZ1*cos(CLHEP::pi/4.);
+ double polyprop_L4 = steel_L4;
+ double angle1 = atan((polyprop_R41min-polyprop_R42min)/polyprop_L4);
+ cout<<"!!!!!!!!!!! R1 R2 angle "<<polyprop_R41min<<" "<<polyprop_R42min<<" "<<angle1<<" "<<tan(angle1)<<endl;
+ G4Cons* solidPolyprop4 =
+   new G4Cons("Polyprop4",                       //its name
+       polyprop_R41min, polyprop_R41max, polyprop_R42min, polyprop_R42max, polyprop_L4/2.0, Phi1, Phi2);     //its size
+ G4LogicalVolume *logicPolyprop4 = new G4LogicalVolume(solidPolyprop4,        //its solid
+                                       polyprop_mat,   //its material
+                                       "Polyprop4");       //its name
+ G4VPhysicalVolume *physicPolyprop4 = new G4PVPlacement(0,                           //rotation
+                        G4ThreeVector(0,0,(alum_L1/2.+alum_L2+steel_L4/2.0)),
+                        logicPolyprop4,                            //its logical volume
+                        "Polyprop4",                                       //its name
+                        logicWorld,                           //its mother  volume
+                        false,                                  //no boolean operation
+                        0);                                     //copy number
+ physicPolyprop4->CheckOverlaps();
+ weight_total += logicPolyprop4->GetMass();
+ cout<<"!!!!!!!!!!!!!weight Polyprop4 total "<<logicPolyprop4->GetMass()/kg<<" "<<weight_total/kg<<endl;
+ double steel_R5max = 225.0*cm/2.;
+ double steel_R5min = steel_R5max - steel_sizeZ;
+ G4Sphere* solidSteel5 =
+    new G4Sphere("Aluminium5",                       //its name
+      steel_R5min, steel_R5max, Phi1, Phi2, 0, CLHEP::pi*3./4.);     //its size
+ G4LogicalVolume *logicSteel5 = new G4LogicalVolume(solidSteel5, //its solid
+                                      steel_mat,   //its material
+                                       "Steel5");       //its name
+ G4VPhysicalVolume *physicSteel5 = new G4PVPlacement(0,                           //rotation
+                        G4ThreeVector(0,0,(alum_L1/2.+alum_L2+steel_L4+steel_R5max*cos(CLHEP::pi/4.)) ),
+                        logicSteel5,                            //its logical volume
+                        "Steel5",                                       //its name
+                        logicWorld,                           //its mother  volume
+                        false,                                  //no boolean operation
+                        0);                                     //copy number
+ physicSteel5->CheckOverlaps();
+ weight_total += logicSteel5->GetMass();
+ cout<<"!!!!!!!!!!!!!!!!weight Steel5 total "<<logicSteel5->GetMass()/kg<<" "<<weight_total/kg<<endl;
+ double polyprop_R5max = steel_R5min;
+ double polyprop_R5min = polyprop_R5max - polyprop_sizeZ1;
+ G4Sphere* solidPolyprop5 =
+    new G4Sphere("Polyprop5",                       //its name
+       polyprop_R5min, polyprop_R5max, Phi1, Phi2, 0, CLHEP::pi*3./4.);     //its size
+ G4LogicalVolume *logicPolyprop5 = new G4LogicalVolume(solidPolyprop5, //its solid
+                                       polyprop_mat,   //its material
+                                       "Polyprop5");       //its name
+ G4VPhysicalVolume *physicPolyprop5 = new G4PVPlacement(0,                           //rotation
+                        G4ThreeVector(0,0,(alum_L1/2.+alum_L2+steel_L4+steel_R5max*cos(CLHEP::pi/4.)) ),
+                        logicPolyprop5,                            //its logical volume
+                        "Polyprop5",                                       //its name
+                        logicWorld,                           //its mother  volume
+                        false,                                  //no boolean operation
+                        0);                                     //copy number
+ physicPolyprop5->CheckOverlaps();
+ weight_total += logicPolyprop5->GetMass();
+ cout<<"!!!!!!!!!!!!!!weight Polyprop5 total "<<logicPolyprop5->GetMass()/kg<<" "<<weight_total/kg<<endl;
+ G4Sphere* solidAir5 =
+    new G4Sphere("Air5",                       //its name
+       0, polyprop_R5min, Phi1, Phi2, 0, CLHEP::twopi);     //its size
+ G4LogicalVolume *logicAir5 = new G4LogicalVolume(solidAir5, //its solid
+                                       iss_mat,   //its material
+                                       "Air5");       //its name
+ G4VPhysicalVolume *physicAir5 = new G4PVPlacement(0,                           //rotation
+                        G4ThreeVector(0,0,(alum_L1/2.+alum_L2+steel_L4+steel_R5max*cos(CLHEP::pi/4.)) ),
+                        logicAir5,                            //its logical volume
+                        "Air5",                                       //its name
+                        logicWorld,                           //its mother  volume
+                        false,                                  //no boolean operation
+                        0);                                     //copy number
+ physicAir5->CheckOverlaps();
+ weight_total += logicAir5->GetMass();
+ cout<<"!!!!!!!!!!weight Air5 total "<<logicAir5->GetMass()/kg<<" "<<weight_total/kg<<endl;
+ double RR = polyprop_R5min-steel_R5max*cos(CLHEP::pi/4.);
+ G4Cons* solidAir4 =
+    new G4Cons("Air4",                       //its name
+       0, polyprop_R41min, 0, polyprop_R41min-(polyprop_L4-RR)*tan(angle1), polyprop_L4/2.0-RR/2., Phi1, Phi2);     //its size
+ G4LogicalVolume *logicAir4 = new G4LogicalVolume(solidAir4,        //its solid
+                                       iss_mat,   //its material
+                                       "Air4");       //its name
+ G4VPhysicalVolume *physicAir4 = new G4PVPlacement(0,                           //rotation
+                        G4ThreeVector(0,0,(alum_L1/2.+alum_L2+(polyprop_L4/2.0-RR/2.))),
+                        logicAir4,                            //its logical volume
+                        "Air4",                                       //its name
+                        logicWorld,                           //its mother  volume
+                        false,                                  //no boolean operation
+                        0);                                     //copy number
+ physicAir4->CheckOverlaps();
+ weight_total += logicAir4->GetMass();
+ cout<<"!!!!!!!!!!!!!weight Air4 total "<<logicAir4->GetMass()/kg<<" "<<weight_total/kg<<endl;
+ double polyprop_R51max = polyprop_R5max*cos(CLHEP::pi/4.);
+ double polyprop_R51min = polyprop_R51max - polyprop_sizeZ1*cos(CLHEP::pi/4.);
+ double polyprop_R52max = polyprop_R5min*cos(CLHEP::pi/4.);
+ double polyprop_R52min = polyprop_R5min*cos(CLHEP::pi/4.);
+ double polyprop_L51 = polyprop_sizeZ1*cos(CLHEP::pi/4.);
+ G4Cons* solidPolyprop51 =
+    new G4Cons("Polyprop51",                       //its name
+       polyprop_R51min, polyprop_R51max, polyprop_R52min, polyprop_R52max, polyprop_L51/2.0, Phi1, Phi2);
+ G4LogicalVolume *logicPolyprop51 = new G4LogicalVolume(solidPolyprop51,        //its solid
+                                       polyprop_mat,   //its material
+                                       "Polyprop51");       //its name
+ G4VPhysicalVolume *physicPolyprop51 = new G4PVPlacement(0,                           //rotation
+                        G4ThreeVector(0,0,(alum_L1/2.+alum_L2+steel_L4+steel_L41+polyprop_L51/2.0)),
+                        logicPolyprop51,                            //its logical volume
+                        "Polyprop51",                                       //its name
+                        logicWorld,                           //its mother  volume
+                        false,                                  //no boolean operation
+                        0);                                     //copy number
+ physicPolyprop51->CheckOverlaps();
+ weight_total += logicPolyprop51->GetMass();
+ cout<<"!!!!!!!!!!!!weight Polyprop51 total "<<logicPolyprop51->GetMass()/kg<<" "<<weight_total/kg<<endl;
+ double polyprop_R62max = polyprop_R51max;
+ double polyprop_R62min = polyprop_R51min;
+ double polyprop_L62 = steel_L41;
+ G4Tubs* solidPolyprop62 =
+    new G4Tubs("Polyprop62",                       //its name
+       polyprop_R62min, polyprop_R62max, polyprop_L62/2.0, Phi1, Phi2);     //its size
+ G4LogicalVolume *logicPolyprop62 = new G4LogicalVolume(solidPolyprop62,        //its solid
+                                       polyprop_mat,   //its material
+                                       "Polyprop62");       //its name
+ G4VPhysicalVolume *physicPolyprop62 = new G4PVPlacement(0,                           //rotation
+                        G4ThreeVector(0,0,(alum_L1/2.+alum_L2+steel_L4+polyprop_L62/2.) ),
+                        logicPolyprop62,                            //its logical volume
+                        "Polyprop62",                                       //its name
+                        logicWorld,                           //its mother  volume
+                        false,                                  //no boolean operation
+                        0);                                     //copy number
+ physicPolyprop62->CheckOverlaps();
+ weight_total += logicPolyprop62->GetMass();
+ cout<<"!!!!!!!!!!!!!weight Polyprop62 total "<<logicPolyprop62->GetMass()/kg<<" "<<weight_total/kg<<endl;
+ cout<<"!!!!!!!!!!!!!!!!!!!!!! total weight "<<weight_total/kg<<endl;
+
+
+
+ // Define the phantom container (10-cm margins from the bounding box of phantom)
+ //
+ auto* containerSolid = new G4Box("phantomBox", fPhantomSize.x()/2 + 10.*cm,
+					           fPhantomSize.y()/2 + 10.*cm,
+						   fPhantomSize.z()/2 + 10.*cm);
+
+ fContainer_logic = new G4LogicalVolume(containerSolid, iss_mat, "phantomLogical");
+
+ G4RotationMatrix *rotMatrix1 = new G4RotationMatrix();
+ rotMatrix1->rotateZ(-CLHEP::pi);
+ rotMatrix1->rotateX(CLHEP::pi*3./2.);
+ new G4PVPlacement(rotMatrix1, 
+                   G4ThreeVector(), 
+                   fContainer_logic, 
+                   "PhantomPhysical",
+//	           logicWorld, 
+	           logicAir7, 
+                   false, 
+                   0,
+                   true);
+
+ fContainer_logic->SetOptimisation(TRUE);
+ fContainer_logic->SetSmartless( 0.5 ); // for optimization (default=2)
+ cout<<"end"<<endl;
+}
+
+void DetectorConstruction::ConstructPhantom()
+{
+ // Define the tetrahedral mesh phantom as a parameterised geometry
+ //
+ // solid and logical volume to be used for parameterised geometry
+ G4VSolid* tetraSolid = new G4Tet("TetSolid", G4ThreeVector(),
+			           G4ThreeVector(1.*cm,0,0),
+			           G4ThreeVector(0,1.*cm,0),
+			           G4ThreeVector(0,0,1.*cm));
+
+  G4Material* vacuum = G4NistManager::Instance()->FindOrBuildMaterial("G4_Galactic");
+  fTetLogic = new G4LogicalVolume(tetraSolid, vacuum, "TetLogic");
+
+  // physical volume (phantom) constructed as parameterised geometry
+  new G4PVParameterised("wholePhantom",fTetLogic,fContainer_logic,
+			  kUndefined, fTetData->GetNumTetrahedron(),
+			 new TETParameterisation(fTetData));
+}
+
+/*
+void DetectorConstruction::ConstructSDandField()
+{
+ // Define detector (Phantom SD) and scorer (eDep)
+ //
+ G4SDManager* pSDman = G4SDManager::GetSDMpointer();
+ G4String phantomSDname = "PhantomSD";
+
+ // MultiFunctional detector
+ auto* MFDet = new G4MultiFunctionalDetector(phantomSDname);
+ pSDman->AddNewDetector( MFDet );
+
+ // scorer for energy depositon in each organ
+ MFDet->RegisterPrimitive(new TETPSEnergyDeposit("eDep", fTetData));
+
+ // attach the detector to logical volume for parameterised geometry (phantom geometry)
+ SetSensitiveDetector(fTetLogic, MFDet);
+}
+*/
+void DetectorConstruction::PrintPhantomInformation()
+{
+ // print brief information on the imported phantom
+ G4cout<< G4endl;
+ G4cout.precision(3);
+ G4cout<<"   Phantom name               "<<fTetData->GetPhantomName() << " TET phantom"<<G4endl;
+ G4cout<<"   Phantom size               "<<fPhantomSize.x()<<" * "<<fPhantomSize.y()<<" * "<<fPhantomSize.z()<<" mm3"<<G4endl;
+ G4cout<<"   Phantom box position (min) "<<fPhantomBoxMin.x()<<" mm, "<<fPhantomBoxMin.y()<<" mm, "<<fPhantomBoxMin.z()<<" mm"<<G4endl;
+ G4cout<<"   Phantom box position (max) "<<fPhantomBoxMax.x()<<" mm, "<<fPhantomBoxMax.y()<<" mm, "<<fPhantomBoxMax.z()<<" mm"<<G4endl;
+ G4cout<<"   Number of tetrahedrons     "<<fNOfTetrahedrons<<G4endl<<G4endl;
+}
+
+G4Material* DetectorConstruction::FindMaterial(G4String name)
+{
+    G4Material* material = G4Material::GetMaterial(name,true);
+    if ( material )
+     cout<<"material name density "<<material->GetName()<<" "<<material->GetDensity()/(g/cm3)<<endl;
+    return material;
+}
+
+void DetectorConstruction::DefineMaterials()
+{
+  materials = Materials::GetInstance();
+  composite_mat = FindMaterial("Comp");
+  lif_mat = FindMaterial("LiF");
+  steel_mat = FindMaterial("Steel");
+}
+
