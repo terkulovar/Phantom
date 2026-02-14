@@ -170,7 +170,8 @@ void MySteppingAction::UserSteppingAction(const G4Step* step)
 
    if ( G4StrUtil::contains(name,"neutron") )
    {
-    edep1 = -((step->GetDeltaEnergy()/CLHEP::eV)*e_SI)/(mass/kg);
+    //edep1 = -((step->GetDeltaEnergy()/CLHEP::eV)*e_SI)/(mass/kg);
+    edep1 = (((step->GetPreStepPoint()->GetKineticEnergy()-step->GetPostStepPoint()->GetKineticEnergy())/CLHEP::eV)*e_SI)/(mass/kg);
    }
    man->FillNtupleIColumn(1,0,evId);
 //   man->FillNtupleDColumn(1,1,(Energy/CLHEP::MeV));
