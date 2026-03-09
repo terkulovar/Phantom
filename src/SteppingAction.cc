@@ -168,11 +168,11 @@ void MySteppingAction::UserSteppingAction(const G4Step* step)
 //   G4double edep1 = ((edepStep/CLHEP::eV)*e_SI)/(OrganMass[materialNo]/kg);
    G4double edep1 = ((edepStep/CLHEP::eV)*e_SI)/(mass/kg);
 
-   if ( G4StrUtil::contains(name,"neutron") )
-   {
+//   if ( G4StrUtil::contains(name,"neutron") )
+//   {
     //edep1 = -((step->GetDeltaEnergy()/CLHEP::eV)*e_SI)/(mass/kg);
-    edep1 = (((step->GetPreStepPoint()->GetKineticEnergy()-step->GetPostStepPoint()->GetKineticEnergy())/CLHEP::eV)*e_SI)/(mass/kg);
-   }
+//    edep1 = (((step->GetPreStepPoint()->GetKineticEnergy()-step->GetPostStepPoint()->GetKineticEnergy())/CLHEP::eV)*e_SI)/(mass/kg);
+//   }
    man->FillNtupleIColumn(1,0,evId);
 //   man->FillNtupleDColumn(1,1,(Energy/CLHEP::MeV));
    man->FillNtupleDColumn(1,1,(kinetic_energy/CLHEP::MeV));
